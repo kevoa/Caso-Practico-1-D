@@ -54,11 +54,12 @@ pipeline {
             steps {
                 echo "Empaquetando y desplegando en Staging con SAM dentro de un contenedor..."
                 
-                sh """
-                    sam build \\
-                        --use-container \\
-                        --manifest src/requirements.txt
-                """
+                // Copiamos el archivo de dependencias a la raíz del proyecto
+                sh 'cp src/requirements.txt .'
+        
+                sh 'sam build --use-container'
+                
+                // ... el resto de la etapa sam deploy
                 sh """
                     sam deploy \\
                         --stack-name ${STAGING_STACK_NAME} \\
