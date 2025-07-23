@@ -56,7 +56,7 @@ pipeline {
                 
                 sh """
                     # Copiamos el archivo de dependencias a la raíz del proyecto
-                    cp src/requirements.txt .
+                    cp requirements.txt src/
         
                     # sam build se ejecutará en el mismo shell y encontrará el archivo
                     sam build --use-container
