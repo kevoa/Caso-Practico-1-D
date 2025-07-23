@@ -25,9 +25,8 @@ pipeline {
         stage('Static Test') {
             steps {
                 echo "Ejecutando análisis estático..."
-                // Usamos sudo porque el agente corre como root.
                 // '|| true' asegura que la etapa no falle aunque haya errores.
-                sh 'sudo pip install flake8 bandit'
+                sh 'pip install flake8 bandit'
                 sh 'flake8 ./src --format=html --htmldir=flake8-report || true'
                 sh 'bandit -r ./src -f html -o bandit-report.html || true'
 
@@ -55,7 +54,7 @@ pipeline {
         stage('Rest Test (Pytest)') {
             steps {
                 echo "Instalando dependencias para las pruebas..."
-                sh 'sudo pip install -r test/integration/requirements.txt'
+                sh 'pip install -r test/integration/requirements.txt'
 
                 echo "Obteniendo la URL del API Gateway..."
                 script {
