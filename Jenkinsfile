@@ -53,7 +53,12 @@ pipeline {
         stage('Deploy to Staging') {
             steps {
                 echo "Empaquetando y desplegando en Staging con SAM dentro de un contenedor..."
-                sh 'sam build --use-container'
+                
+                sh """
+                    sam build \\
+                        --use-container \\
+                        --manifest src/requirements.txt
+                """
                 sh """
                     sam deploy \\
                         --stack-name ${STAGING_STACK_NAME} \\
