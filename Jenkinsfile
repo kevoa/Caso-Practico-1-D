@@ -54,14 +54,11 @@ pipeline {
             steps {
                 echo "Empaquetando y desplegando en Staging con SAM dentro de un contenedor..."
                 
-                // --- INICIO DE PASOS DE DEPURACIÓN ---
+                // Pasos de depuración corregidos
                 echo "Verificando contenido de src/ antes de sam build:"
                 sh 'ls -la src/'
                 echo "Contenido de src/requirements.txt:"
                 sh 'cat src/requirements.txt'
-                echo "Tipo de archivo de src/requirements.txt:"
-                sh 'file src/requirements.txt'
-                // --- FIN DE PASOS DE DEPURACIÓN ---
                 
                 sh 'sam build --use-container'
                 
