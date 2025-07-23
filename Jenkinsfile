@@ -13,6 +13,9 @@ pipeline {
         stage('Get Code') {
             steps {
                 echo "Descargando código de la rama ${env.BRANCH_NAME}..."
+                sh 'mkdir -p ~/.ssh'
+                sh 'ssh-keyscan github.com >> ~/.ssh/known_hosts'
+                
                 checkout scm
             }
         }
