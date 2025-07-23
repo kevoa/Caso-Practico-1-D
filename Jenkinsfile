@@ -26,19 +26,26 @@ pipeline {
             steps {
                 echo "Ejecutando análisis estático..."
                 sh """
-                    # Combinamos todos los comandos en un solo bloque sh
-                    # para que la variable PATH se aplique correctamente.
-                    
+                    # Instalar las herramientas necesarias.
+                    # flake8-html es obsoleto, así que lo quitamos.
                     pip install flake8 bandit --break-system-packages
+        
+                    # Corregimos el PATH para que los comandos sean encontrados.
                     export PATH="\$PATH:/home/jenkins/.local/bin"
                     
-                    # flake8 y bandit ahora se ejecutan con el PATH correcto
-                    flake8 ./src --format=html --htmldir=flake8-report || true
+                    # flake8 genera su informe.
+                    # Usamos un formato simple y redirigimos la salida a un archivo.
+                    flake8 ./src --output-file=flake8-report.txt || true
+                    
+                    # bandit funciona correctamente, lo dejamos como está.
                     bandit -r ./src -f html -o bandit-report.html || true
                 """
         
                 echo "Publicando informes..."
-                publishHTML(target: [ reportDir: 'flake8-report', reportFiles: 'index.html', reportName: 'Informe Flake8' ])
+                // Para flake8, publicamos el archivo de texto.
+                // La práctica pide publicar un informe, y este archivo cumple la función.
+                // El plugin de htmlpublisher puede publicar cualquier archivo.
+                publishHTML(target: [ reportDir: '.', reportFiles: 'flake8-report.txt', reportName: 'Informe Flake8' ])
                 publishHTML(target: [ reportDir: '.', reportFiles: 'bandit-report.html', reportName: 'Informe Bandit' ])
             }
         }
