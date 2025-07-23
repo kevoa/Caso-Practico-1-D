@@ -27,6 +27,7 @@ pipeline {
                 echo "Ejecutando análisis estático..."
                 // '|| true' asegura que la etapa no falle aunque haya errores.
                 sh 'pip install flake8 bandit --break-system-packages'
+                sh 'export PATH="$PATH:/home/jenkins/.local/bin"'
                 sh 'flake8 ./src --format=html --htmldir=flake8-report || true'
                 sh 'bandit -r ./src -f html -o bandit-report.html || true'
 
