@@ -25,12 +25,18 @@ pipeline {
         stage('Static Test') {
             steps {
                 echo "Ejecutando análisis estático..."
-                // '|| true' asegura que la etapa no falle aunque haya errores.
-                sh 'pip install flake8 bandit --break-system-packages'
-                sh 'export PATH="$PATH:/home/jenkins/.local/bin"'
-                sh 'flake8 ./src --format=html --htmldir=flake8-report || true'
-                sh 'bandit -r ./src -f html -o bandit-report.html || true'
-
+                sh """
+                    # Combinamos todos los comandos en un solo bloque sh
+                    # para que la variable PATH se aplique correctamente.
+                    
+                    pip install flake8 bandit --break-system-packages
+                    export PATH="\$PATH:/home/jenkins/.local/bin"
+                    
+                    # flake8 y bandit ahora se ejecutan con el PATH correcto
+                    flake8 ./src --format=html --htmldir=flake8-report || true
+                    bandit -r ./src -f html -o bandit-report.html || true
+                """
+        
                 echo "Publicando informes..."
                 publishHTML(target: [ reportDir: 'flake8-report', reportFiles: 'index.html', reportName: 'Informe Flake8' ])
                 publishHTML(target: [ reportDir: '.', reportFiles: 'bandit-report.html', reportName: 'Informe Bandit' ])
