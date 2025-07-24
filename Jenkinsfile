@@ -1,88 +1,81 @@
 pipeline {
-    // Le decimos a Jenkins que ejecute todo en nuestro agente con la etiqueta 'general'
-    agent { label 'general' }
+    // Definimos un agente 'none' a nivel global porque cada etapa definirá el suyo.
+    agent none
 
     environment {
-        AWS_REGION         = 'us-east-1'
-        // ¡IMPORTANTE! Reemplaza esto con el nombre del bucket S3 que creaste
-        S3_BUCKET_NAME     = 'aws-sam-cli-managed-default-samclisourcebucket-bzstlrjji7cw' 
-        STAGING_STACK_NAME = 'todo-api-staging'
+        AWS_REGION = 'us-east-1'
     }
 
     stages {
-        stage('Get Code') {
-            steps {
-                echo "Descargando código de la rama ${env.BRANCH_NAME}..."
-                sh 'mkdir -p ~/.ssh'
-                sh 'ssh-keyscan github.com >> ~/.ssh/known_hosts'
-                sh 'git config --global core.sshCommand "ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"'
+        // --- ETAPAS COMUNES A AMBAS RAMAS ---
 
-                
+        stage('Análisis Estático') {
+            // Esta etapa se ejecuta SIEMPRE, pero solo en la rama 'develop'
+            when { branch 'develop' }
+            agent { label 'static-agent' }
+            steps {
+                sh 'echo "--- Ejecutando en Host: $(hostname) como $(whoami) ---"'
                 checkout scm
-            }
-        }
+                
+                echo "--- Descargando configuración de Staging ---"
+                dir('config') {
+                    git url: 'git@github.com:kevoa/todo-list-aws-config.git', branch: 'staging', credentialsId: 'github-ssh-key'
+                }
 
-        stage('Static Test') {
-            steps {
-                echo "Ejecutando análisis estático..."
-                sh """
-                    # Instalar las herramientas necesarias.
-                    # flake8-html es obsoleto, así que lo quitamos.
-                    pip install flake8 bandit --break-system-packages
-        
-                    # Corregimos el PATH para que los comandos sean encontrados.
-                    export PATH="\$PATH:/home/jenkins/.local/bin"
-                    
-                    # flake8 genera su informe.
-                    # Usamos un formato simple y redirigimos la salida a un archivo.
-                    flake8 ./src --output-file=flake8-report.txt || true
-                    
-                    # bandit funciona correctamente, lo dejamos como está.
-                    bandit -r ./src -f html -o bandit-report.html || true
-                """
-        
-                echo "Publicando informes..."
-                // Para flake8, publicamos el archivo de texto.
-                // La práctica pide publicar un informe, y este archivo cumple la función.
-                // El plugin de htmlpublisher puede publicar cualquier archivo.
+                sh '''
+                    echo "--- Instalando y ejecutando análisis estático ---"
+                    pip install -q flake8 bandit --break-system-packages
+                    /home/jenkins/.local/bin/flake8 ./src --output-file=flake8-report.txt || true
+                    /home/jenkins/.local/bin/bandit -r ./src -f html -o bandit-report.html || true
+                '''
+                
+                echo "--- Publicando informes ---"
                 publishHTML(target: [ reportDir: '.', reportFiles: 'flake8-report.txt', reportName: 'Informe Flake8' ])
                 publishHTML(target: [ reportDir: '.', reportFiles: 'bandit-report.html', reportName: 'Informe Bandit' ])
             }
-        }
-
-        stage('Deploy to Staging') {
-            steps {
-                echo "Empaquetando y desplegando en Staging con SAM dentro de un contenedor..."
-                sh 'sam build'
-                
-                sh """
-                    sam deploy \\
-                        --stack-name ${STAGING_STACK_NAME} \\
-                        --s3-bucket ${S3_BUCKET_NAME} \\
-                        --capabilities CAPABILITY_IAM \\
-                        --region ${AWS_REGION} \\
-                        --no-fail-on-empty-changeset \\
-                        --parameter-overrides DynamoDBTableName=staging-todos-table
-                """
+            post {
+                always {
+                    stash name: 'config-staging', includes: 'config/**'
+                }
             }
         }
 
-        stage('Rest Test (Pytest)') {
+        // --- ETAPAS ESPECÍFICAS PARA STAGING (rama develop) ---
+
+        stage('Despliegue en Staging') {
+            when { branch 'develop' }
+            agent { label 'deploy-test-agent' }
             steps {
-                echo "Instalando dependencias para las pruebas..."
-                sh 'pip install -r test/integration/requirements.txt --break-system-packages'
-        
-                // Envolvemos la lógica en un bloque 'script'
+                sh 'echo "--- Ejecutando en Host: $(hostname) como $(whoami) ---"'
+                checkout scm
+                unstash 'config-staging'
+
+                echo "--- Construyendo y desplegando en Staging ---"
+                sh 'sam build'
+                sh 'sam deploy --config-file config/samconfig.toml --config-env staging || true'
+
                 script {
-                    echo "Obteniendo la URL del API Gateway..."
-                    def apiUrl = sh(
-                        // CORRECCIÓN 1: Cambiamos 'TodoApi' por 'BaseUrlApi'
-                        script: "aws cloudformation describe-stacks --stack-name ${STAGING_STACK_NAME} --query 'Stacks[0].Outputs[?OutputKey==`BaseUrlApi`].OutputValue' --output text --region ${AWS_REGION}",
-                        returnStdout: true
-                    ).trim()
-                    
-                    echo "Ejecutando pruebas de integración contra: ${apiUrl}"
-                    // CORRECCIÓN 2: Añadimos el PATH correcto antes de ejecutar pytest
+                    echo "--- Obteniendo y guardando la URL de la API ---"
+                    def stackName = 'todo-api-staging'
+                    def apiUrl = sh(script: "aws cloudformation describe-stacks --stack-name ${stackName} --query 'Stacks[0].Outputs[?OutputKey==`BaseUrlApi`].OutputValue' --output text --region ${AWS_REGION}", returnStdout: true).trim()
+                    writeFile file: 'api_url.txt', text: apiUrl
+                    stash name: 'apiInfo-staging', includes: 'api_url.txt'
+                }
+            }
+        }
+
+        stage('Pruebas de Integración (Staging)') {
+            when { branch 'develop' }
+            agent { label 'deploy-test-agent' }
+            steps {
+                sh 'echo "--- Ejecutando en Host: $(hostname) como $(whoami) ---"'
+                checkout scm
+                unstash 'apiInfo-staging'
+                
+                script {
+                    def apiUrl = readFile('api_url.txt').trim()
+                    echo "--- Ejecutando pruebas completas contra: ${apiUrl} ---"
+                    sh 'pip install -q -r test/integration/requirements.txt --break-system-packages'
                     sh """
                         export PATH="/home/jenkins/.local/bin:\$PATH"
                         API_URL=${apiUrl} pytest test/integration/todoApiTest.py
@@ -91,26 +84,63 @@ pipeline {
             }
         }
 
-        stage('Promote') {
+        stage('Promoción a Master') {
+            when { branch 'develop' }
+            agent { label 'deploy-test-agent' }
             steps {
-                echo "Promocionando el código a la rama 'master'..."
-                // Usamos la credencial SSH que ya configuraste para tu repositorio
-                withCredentials([sshUserPrivateKey(credentialsId: 'github-ssh-key', keyFileVariable: 'GIT_SSH_KEY')]) {
-                    sh """
-                        # Configura Git para usar la clave SSH
-                        mkdir -p ~/.ssh
-                        cp \$GIT_SSH_KEY ~/.ssh/id_ed25519
-                        chmod 600 ~/.ssh/id_ed25519
-                        ssh-keyscan github.com >> ~/.ssh/known_hosts
-
-                        # Configura el autor del commit
+                sh 'echo "--- Ejecutando en Host: $(hostname) como $(whoami) ---"'
+                checkout scm
+                
+                echo "--- Fusionando 'develop' con 'master' ---"
+                sshagent(credentials: ['github-ssh-key']) {
+                    sh '''
                         git config --global user.email "jenkins@kevin.com"
                         git config --global user.name "Jenkins CI"
-                        
-                        # Realiza el merge y el push
                         git checkout master
                         git merge origin/develop
                         git push origin master
+                    '''
+                }
+            }
+        }
+
+        // --- ETAPAS ESPECÍFICAS PARA PRODUCCIÓN (rama master) ---
+
+        stage('Despliegue en Producción') {
+            when { branch 'master' }
+            agent { label 'deploy-test-agent' }
+            steps {
+                sh 'echo "--- Ejecutando en Host: $(hostname) como $(whoami) ---"'
+                checkout scm
+                
+                echo "--- Descargando configuración de Producción ---"
+                dir('config') {
+                    git url: 'git@github.com:kevoa/todo-list-aws-config.git', branch: 'production', credentialsId: 'github-ssh-key'
+                }
+
+                echo "--- Construyendo y desplegando en Producción ---"
+                sh 'sam build'
+                sh 'sam deploy --config-file config/samconfig.toml --config-env production || true'
+            }
+        }
+
+        stage('Pruebas de Lectura (Producción)') {
+            when { branch 'master' }
+            agent { label 'deploy-test-agent' }
+            steps {
+                sh 'echo "--- Ejecutando en Host: $(hostname) como $(whoami) ---"'
+                script {
+                    echo "--- Instalando dependencias de las pruebas ---"
+                    sh 'pip install -q -r test/integration/requirements.txt --break-system-packages'
+
+                    echo "--- Obteniendo la URL del API de Producción ---"
+                    def stackName = 'todo-api-production'
+                    def apiUrl = sh(script: "aws cloudformation describe-stacks --stack-name ${stackName} --query 'Stacks[0].Outputs[?OutputKey==`BaseUrlApi`].OutputValue' --output text --region ${AWS_REGION}", returnStdout: true).trim()
+                    
+                    echo "--- Ejecutando pruebas de solo lectura contra: ${apiUrl} ---"
+                    sh """
+                        export PATH="/home/jenkins/.local/bin:\$PATH"
+                        API_URL=${apiUrl} pytest -m readonly test/integration/todoApiTest.py
                     """
                 }
             }
