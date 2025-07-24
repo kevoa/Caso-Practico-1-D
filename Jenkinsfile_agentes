@@ -16,6 +16,7 @@ pipeline {
                 checkout scm
                 
                 echo "--- Descargando configuración de Staging ---"
+                // CORRECCIÓN: Envolvemos el comando 'git' en un paso 'dir'
                 dir('config') {
                     git url: 'git@github.com:kevoa/todo-list-aws-config.git', branch: 'staging', credentialsId: 'github-ssh-key'
                 }
