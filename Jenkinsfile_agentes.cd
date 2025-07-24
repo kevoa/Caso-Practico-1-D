@@ -1,57 +1,44 @@
 pipeline {
-    // Definimos un agente 'none' a nivel global porque cada etapa definirá el suyo.
     agent none
 
     environment {
-        AWS_REGION            = 'us-east-1'
-        S3_BUCKET_NAME        = 'aws-sam-cli-managed-default-samclisourcebucket-bzstlrjji7cw'
-        PRODUCTION_STACK_NAME = 'todo-api-production'
+        AWS_REGION = 'us-east-1'
     }
 
     stages {
         stage('Despliegue en Producción') {
-            // Esta etapa se ejecuta en el agente de despliegue
             agent { label 'deploy-test-agent' }
             steps {
-                // AÑADIDO: Mostrar información del agente
                 sh '''
                     echo "--- Ejecutando en Host: $(hostname) ---"
                     echo "--- Como Usuario: $(whoami) ---"
                 '''
                 checkout scm
                 
+                echo "--- Descargando configuración de Producción ---"
+                git url: 'git@github.com:kevoa/todo-list-aws-config.git', branch: 'production', credentialsId: 'github-ssh-key', dir: 'config'
+
                 echo "--- Construyendo y desplegando en Producción ---"
                 sh 'sam build'
-                sh """
-                    sam deploy \\
-                        --stack-name ${PRODUCTION_STACK_NAME} \\
-                        --s3-bucket ${S3_BUCKET_NAME} \\
-                        --capabilities CAPABILITY_IAM \\
-                        --region ${AWS_REGION} \\
-                        --no-fail-on-empty-changeset \\
-                        --parameter-overrides DynamoDBTableName=production-todos-table
-                """
+                sh 'sam deploy --config-file config/samconfig.toml --config-env production'
             }
         }
 
         stage('Pruebas de Lectura (Pytest)') {
-            // Las pruebas también se ejecutan en el mismo agente de despliegue
             agent { label 'deploy-test-agent' }
             steps {
-                // AÑADIDO: Mostrar información del agente
                 sh '''
                     echo "--- Ejecutando en Host: $(hostname) ---"
                     echo "--- Como Usuario: $(whoami) ---"
                 '''
-                // No es necesario hacer checkout scm de nuevo, porque esta etapa
-                // se ejecuta en el mismo agente y workspace que la anterior.
                 script {
                     echo "--- Instalando dependencias de las pruebas ---"
                     sh 'pip install -q -r test/integration/requirements.txt --break-system-packages'
 
                     echo "--- Obteniendo la URL del API de Producción ---"
+                    def stackName = 'todo-api-production'
                     def apiUrl = sh(
-                        script: "aws cloudformation describe-stacks --stack-name ${PRODUCTION_STACK_NAME} --query 'Stacks[0].Outputs[?OutputKey==`BaseUrlApi`].OutputValue' --output text --region ${AWS_REGION}",
+                        script: "aws cloudformation describe-stacks --stack-name ${stackName} --query 'Stacks[0].Outputs[?OutputKey==`BaseUrlApi`].OutputValue' --output text --region ${AWS_REGION}",
                         returnStdout: true
                     ).trim()
                     

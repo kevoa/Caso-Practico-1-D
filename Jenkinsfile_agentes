@@ -2,58 +2,59 @@ pipeline {
     agent none
 
     environment {
-        AWS_REGION         = 'us-east-1'
-        S3_BUCKET_NAME     = 'aws-sam-cli-managed-default-samclisourcebucket-bzstlrjji7cw'
-        STAGING_STACK_NAME = 'todo-api-staging'
+        AWS_REGION = 'us-east-1'
     }
 
     stages {
-        stage('Análisis Estático') {
+        stage('Análisis Estático y Descarga de Configuración') {
             agent { label 'static-agent' }
             steps {
-                // AÑADIDO: Mostrar información del agente
                 sh '''
                     echo "--- Ejecutando en Host: $(hostname) ---"
                     echo "--- Como Usuario: $(whoami) ---"
                 '''
                 checkout scm
+                
+                echo "--- Descargando configuración de Staging ---"
+                git url: 'git@github.com:kevoa/todo-list-aws-config.git', branch: 'staging', credentialsId: 'github-ssh-key', dir: 'config'
+
                 sh '''
-                    echo "--- Instalando herramientas de análisis ---"
+                    echo "--- Instalando y ejecutando análisis estático ---"
                     pip install -q flake8 bandit --break-system-packages
-                    echo "--- Ejecutando Flake8 y Bandit ---"
                     /home/jenkins/.local/bin/flake8 ./src --output-file=flake8-report.txt || true
                     /home/jenkins/.local/bin/bandit -r ./src -f html -o bandit-report.html || true
                 '''
+                
                 echo "--- Publicando informes ---"
                 publishHTML(target: [ reportDir: '.', reportFiles: 'flake8-report.txt', reportName: 'Informe Flake8' ])
                 publishHTML(target: [ reportDir: '.', reportFiles: 'bandit-report.html', reportName: 'Informe Bandit' ])
+            }
+            post {
+                always {
+                    stash name: 'config', includes: 'config/**'
+                }
             }
         }
 
         stage('Despliegue en Staging') {
             agent { label 'deploy-test-agent' }
             steps {
-                // AÑADIDO: Mostrar información del agente
                 sh '''
                     echo "--- Ejecutando en Host: $(hostname) ---"
                     echo "--- Como Usuario: $(whoami) ---"
                 '''
                 checkout scm
-                echo "--- Construyendo y desplegando con SAM ---"
+                unstash 'config'
+
+                echo "--- Construyendo y desplegando con SAM usando fichero de configuración ---"
                 sh 'sam build'
-                sh """
-                    sam deploy \\
-                        --stack-name ${STAGING_STACK_NAME} \\
-                        --s3-bucket ${S3_BUCKET_NAME} \\
-                        --capabilities CAPABILITY_IAM \\
-                        --region ${AWS_REGION} \\
-                        --no-fail-on-empty-changeset \\
-                        --parameter-overrides DynamoDBTableName=staging-todos-table
-                """
+                sh 'sam deploy --config-file config/samconfig.toml --config-env staging'
+
                 script {
                     echo "--- Obteniendo y guardando la URL de la API ---"
+                    def stackName = 'todo-api-staging'
                     def apiUrl = sh(
-                        script: "aws cloudformation describe-stacks --stack-name ${STAGING_STACK_NAME} --query 'Stacks[0].Outputs[?OutputKey==`BaseUrlApi`].OutputValue' --output text --region ${AWS_REGION}",
+                        script: "aws cloudformation describe-stacks --stack-name ${stackName} --query 'Stacks[0].Outputs[?OutputKey==`BaseUrlApi`].OutputValue' --output text --region ${AWS_REGION}",
                         returnStdout: true
                     ).trim()
                     writeFile file: 'api_url.txt', text: apiUrl
@@ -65,13 +66,15 @@ pipeline {
         stage('Pruebas de Integración (Pytest)') {
             agent { label 'deploy-test-agent' }
             steps {
-                // AÑADIDO: Mostrar información del agente
                 sh '''
                     echo "--- Ejecutando en Host: $(hostname) ---"
                     echo "--- Como Usuario: $(whoami) ---"
                 '''
+                checkout scm
+                
                 echo "--- Recuperando la URL de la API ---"
                 unstash 'apiInfo'
+                
                 script {
                     def apiUrl = readFile('api_url.txt').trim()
                     echo "--- Ejecutando pruebas contra: ${apiUrl} ---"
@@ -87,12 +90,12 @@ pipeline {
         stage('Promoción a Master') {
             agent { label 'deploy-test-agent' }
             steps {
-                // AÑADIDO: Mostrar información del agente
                 sh '''
                     echo "--- Ejecutando en Host: $(hostname) ---"
                     echo "--- Como Usuario: $(whoami) ---"
                 '''
                 checkout scm
+                
                 echo "--- Fusionando 'develop' con 'master' ---"
                 sshagent(credentials: ['github-ssh-key']) {
                     sh '''
