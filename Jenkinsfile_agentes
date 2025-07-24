@@ -1,5 +1,4 @@
 pipeline {
-    // Definimos un agente 'none' a nivel global porque cada etapa definirá el suyo.
     agent none
 
     environment {
@@ -9,14 +8,10 @@ pipeline {
     }
 
     stages {
-        // ETAPA 1: ANÁLISIS ESTÁTICO
         stage('Análisis Estático') {
-            // CAMBIO: Esta etapa se ejecuta en el agente 'static-agent'
             agent { label 'static-agent' }
             steps {
-                // Primero, necesitamos el código en este agente
                 checkout scm
-                
                 sh '''
                     echo "--- Instalando herramientas de análisis ---"
                     pip install -q flake8 bandit --break-system-packages
@@ -24,20 +19,16 @@ pipeline {
                     /home/jenkins/.local/bin/flake8 ./src --output-file=flake8-report.txt || true
                     /home/jenkins/.local/bin/bandit -r ./src -f html -o bandit-report.html || true
                 '''
-                
                 echo "--- Publicando informes ---"
                 publishHTML(target: [ reportDir: '.', reportFiles: 'flake8-report.txt', reportName: 'Informe Flake8' ])
                 publishHTML(target: [ reportDir: '.', reportFiles: 'bandit-report.html', reportName: 'Informe Bandit' ])
             }
         }
 
-        // ETAPA 2: DESPLIEGUE EN STAGING
         stage('Despliegue en Staging') {
-            // CAMBIO: Esta etapa se ejecuta en el agente 'deploy-test-agent'
             agent { label 'deploy-test-agent' }
             steps {
                 checkout scm
-                
                 echo "--- Construyendo y desplegando con SAM ---"
                 sh 'sam build'
                 sh """
@@ -49,38 +40,26 @@ pipeline {
                         --no-fail-on-empty-changeset \\
                         --parameter-overrides DynamoDBTableName=staging-todos-table
                 """
-
-                // SOLUCIÓN AL RETO: Guardamos la URL para el siguiente agente
                 script {
                     echo "--- Obteniendo y guardando la URL de la API ---"
                     def apiUrl = sh(
                         script: "aws cloudformation describe-stacks --stack-name ${STAGING_STACK_NAME} --query 'Stacks[0].Outputs[?OutputKey==`BaseUrlApi`].OutputValue' --output text --region ${AWS_REGION}",
                         returnStdout: true
                     ).trim()
-                    
-                    // Escribimos la URL en un fichero
                     writeFile file: 'api_url.txt', text: apiUrl
-                    
-                    // 'stash' guarda el fichero en el máster de Jenkins
-                    stash name: 'apiInfo', files: 'api_url.txt'
+                    // CORRECCIÓN: Usamos 'includes' en lugar de 'files'
+                    stash name: 'apiInfo', includes: 'api_url.txt'
                 }
             }
         }
 
-        // ETAPA 3: PRUEBAS DE INTEGRACIÓN
         stage('Pruebas de Integración (Pytest)') {
-            // CAMBIO: Esta etapa también se ejecuta en 'deploy-test-agent'
             agent { label 'deploy-test-agent' }
             steps {
-                // SOLUCIÓN AL RETO: Recuperamos la URL del agente anterior
                 echo "--- Recuperando la URL de la API ---"
-                // 'unstash' recupera el fichero desde el máster de Jenkins
                 unstash 'apiInfo'
-                
                 script {
-                    // Leemos la URL del fichero
                     def apiUrl = readFile('api_url.txt').trim()
-                    
                     echo "--- Ejecutando pruebas contra: ${apiUrl} ---"
                     sh 'pip install -q -r test/integration/requirements.txt --break-system-packages'
                     sh """
@@ -91,14 +70,12 @@ pipeline {
             }
         }
 
-        // ETAPA 4: PROMOCIÓN A MASTER
         stage('Promoción a Master') {
-            // CAMBIO: Esta etapa también se ejecuta en 'deploy-test-agent'.
             agent { label 'deploy-test-agent' }
             steps {
                 checkout scm
-                
                 echo "--- Fusionando 'develop' con 'master' ---"
+                // Ahora que el plugin está instalado, este comando funcionará
                 sshagent(credentials: ['github-ssh-key']) {
                     sh '''
                         git config --global user.email "jenkins@kevin.com"
