@@ -69,7 +69,7 @@ pipeline {
         stage('Rest Test (Pytest)') {
             steps {
                 echo "Instalando dependencias para las pruebas..."
-                sh 'pip install -r test/integration/requirements.txt'
+                sh 'pip install -r test/integration/requirements.txt --break-system-packages'
 
                 echo "Obteniendo la URL del API Gateway..."
                 script {
