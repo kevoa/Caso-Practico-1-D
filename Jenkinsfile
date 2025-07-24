@@ -53,14 +53,7 @@ pipeline {
         stage('Deploy to Staging') {
             steps {
                 echo "Empaquetando y desplegando en Staging con SAM dentro de un contenedor..."
-                
-                // Pasos de depuración corregidos
-                echo "Verificando contenido de src/ antes de sam build:"
-                sh 'ls -la src/'
-                echo "Contenido de src/requirements.txt:"
-                sh 'cat src/requirements.txt'
-                
-                sh 'sam build --use-container'
+                sh 'sam build'
                 
                 sh """
                     sam deploy \\
