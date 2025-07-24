@@ -11,6 +11,11 @@ pipeline {
         stage('Análisis Estático') {
             agent { label 'static-agent' }
             steps {
+                // AÑADIDO: Mostrar información del agente
+                sh '''
+                    echo "--- Ejecutando en Host: $(hostname) ---"
+                    echo "--- Como Usuario: $(whoami) ---"
+                '''
                 checkout scm
                 sh '''
                     echo "--- Instalando herramientas de análisis ---"
@@ -28,6 +33,11 @@ pipeline {
         stage('Despliegue en Staging') {
             agent { label 'deploy-test-agent' }
             steps {
+                // AÑADIDO: Mostrar información del agente
+                sh '''
+                    echo "--- Ejecutando en Host: $(hostname) ---"
+                    echo "--- Como Usuario: $(whoami) ---"
+                '''
                 checkout scm
                 echo "--- Construyendo y desplegando con SAM ---"
                 sh 'sam build'
@@ -47,7 +57,6 @@ pipeline {
                         returnStdout: true
                     ).trim()
                     writeFile file: 'api_url.txt', text: apiUrl
-                    // CORRECCIÓN: Usamos 'includes' en lugar de 'files'
                     stash name: 'apiInfo', includes: 'api_url.txt'
                 }
             }
@@ -56,6 +65,11 @@ pipeline {
         stage('Pruebas de Integración (Pytest)') {
             agent { label 'deploy-test-agent' }
             steps {
+                // AÑADIDO: Mostrar información del agente
+                sh '''
+                    echo "--- Ejecutando en Host: $(hostname) ---"
+                    echo "--- Como Usuario: $(whoami) ---"
+                '''
                 echo "--- Recuperando la URL de la API ---"
                 unstash 'apiInfo'
                 script {
@@ -73,9 +87,13 @@ pipeline {
         stage('Promoción a Master') {
             agent { label 'deploy-test-agent' }
             steps {
+                // AÑADIDO: Mostrar información del agente
+                sh '''
+                    echo "--- Ejecutando en Host: $(hostname) ---"
+                    echo "--- Como Usuario: $(whoami) ---"
+                '''
                 checkout scm
                 echo "--- Fusionando 'develop' con 'master' ---"
-                // Ahora que el plugin está instalado, este comando funcionará
                 sshagent(credentials: ['github-ssh-key']) {
                     sh '''
                         git config --global user.email "jenkins@kevin.com"

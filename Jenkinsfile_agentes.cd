@@ -9,15 +9,18 @@ pipeline {
     }
 
     stages {
-        // ETAPA 1: DESPLIEGUE EN PRODUCCIÓN
         stage('Despliegue en Producción') {
-            // CAMBIO: Esta etapa se ejecuta en el agente de despliegue
+            // Esta etapa se ejecuta en el agente de despliegue
             agent { label 'deploy-test-agent' }
             steps {
-                // El agente necesita el código para poder desplegar
+                // AÑADIDO: Mostrar información del agente
+                sh '''
+                    echo "--- Ejecutando en Host: $(hostname) ---"
+                    echo "--- Como Usuario: $(whoami) ---"
+                '''
                 checkout scm
                 
-                echo "--- Construyendo y desplegando la aplicación en Producción ---"
+                echo "--- Construyendo y desplegando en Producción ---"
                 sh 'sam build'
                 sh """
                     sam deploy \\
@@ -31,16 +34,20 @@ pipeline {
             }
         }
 
-        // ETAPA 2: PRUEBAS DE SOLO LECTURA
         stage('Pruebas de Lectura (Pytest)') {
-            // CAMBIO: Las pruebas también se ejecutan en el mismo agente de despliegue
+            // Las pruebas también se ejecutan en el mismo agente de despliegue
             agent { label 'deploy-test-agent' }
             steps {
-                // No es necesario hacer 'checkout scm' de nuevo, porque esta etapa
+                // AÑADIDO: Mostrar información del agente
+                sh '''
+                    echo "--- Ejecutando en Host: $(hostname) ---"
+                    echo "--- Como Usuario: $(whoami) ---"
+                '''
+                // No es necesario hacer checkout scm de nuevo, porque esta etapa
                 // se ejecuta en el mismo agente y workspace que la anterior.
                 script {
                     echo "--- Instalando dependencias de las pruebas ---"
-                    sh 'pip install -r test/integration/requirements.txt --break-system-packages'
+                    sh 'pip install -q -r test/integration/requirements.txt --break-system-packages'
 
                     echo "--- Obteniendo la URL del API de Producción ---"
                     def apiUrl = sh(
