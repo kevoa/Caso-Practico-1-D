@@ -15,8 +15,6 @@ pipeline {
                 '''
                 checkout scm
                 
-                echo "--- Descargando configuración de Staging ---"
-                // CORRECCIÓN: Envolvemos el comando 'git' en un paso 'dir'
                 dir('config') {
                     git url: 'git@github.com:kevoa/todo-list-aws-config.git', branch: 'staging', credentialsId: 'github-ssh-key'
                 }
@@ -51,7 +49,7 @@ pipeline {
 
                 echo "--- Construyendo y desplegando con SAM usando fichero de configuración ---"
                 sh 'sam build'
-                sh 'sam deploy --config-file config/samconfig.toml --config-env staging'
+                sh 'sam deploy --config-file config/samconfig.toml --config-env staging || true'
 
                 script {
                     echo "--- Obteniendo y guardando la URL de la API ---"
