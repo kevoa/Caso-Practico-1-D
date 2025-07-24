@@ -16,7 +16,9 @@ pipeline {
                 checkout scm
                 
                 echo "--- Descargando configuración de Producción ---"
-                git url: 'git@github.com:kevoa/todo-list-aws-config.git', branch: 'production', credentialsId: 'github-ssh-key', dir: 'config'
+                dir('config') {
+                    git url: 'git@github.com:kevoa/todo-list-aws-config.git', branch: 'production', credentialsId: 'github-ssh-key'
+                }
 
                 echo "--- Construyendo y desplegando en Producción ---"
                 sh 'sam build'
