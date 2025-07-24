@@ -1,0 +1,55 @@
+pipeline {
+    agent { label 'general' }
+
+    environment {
+        AWS_REGION            = 'us-east-1'
+        S3_BUCKET_NAME        = 'aws-sam-cli-managed-default-samclisourcebucket-bzstlrjji7cw'
+        // CAMBIO: Nuevo nombre para el stack de producción
+        PRODUCTION_STACK_NAME = 'todo-api-production'
+    }
+
+    stages {
+        // ETAPA 1: DESPLIEGUE EN PRODUCCIÓN
+        stage('Despliegue en Producción') {
+            steps {
+                echo "--- Construyendo artefactos con SAM ---"
+                sh 'sam build'
+                
+                echo "--- Desplegando la aplicación en Producción ---"
+                sh """
+                    sam deploy \\
+                        --stack-name ${PRODUCTION_STACK_NAME} \\
+                        --s3-bucket ${S3_BUCKET_NAME} \\
+                        --capabilities CAPABILITY_IAM \\
+                        --region ${AWS_REGION} \\
+                        --no-fail-on-empty-changeset
+                """
+            }
+        }
+
+        // ETAPA 2: PRUEBAS DE SOLO LECTURA
+        stage('Pruebas de Lectura (Pytest)') {
+            steps {
+                script {
+                    echo "--- Instalando dependencias de las pruebas ---"
+                    sh 'pip install -r test/integration/requirements.txt --break-system-packages'
+
+                    echo "--- Obteniendo la URL del API de Producción ---"
+                    def apiUrl = sh(
+                        script: "aws cloudformation describe-stacks --stack-name ${PRODUCTION_STACK_NAME} --query 'Stacks[0].Outputs[?OutputKey==`BaseUrlApi`].OutputValue' --output text --region ${AWS_REGION}",
+                        returnStdout: true
+                    ).trim()
+                    
+                    echo "URL de la API obtenida: ${apiUrl}"
+                    
+                    echo "--- Ejecutando pruebas de solo lectura ---"
+                    // CAMBIO: Usamos el marcador '-m readonly' para ejecutar solo los tests marcados
+                    sh """
+                        export PATH="/home/jenkins/.local/bin:\$PATH"
+                        API_URL=${apiUrl} pytest -m readonly test/integration/todoApiTest.py
+                    """
+                }
+            }
+        }
+    }
+}
