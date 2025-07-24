@@ -93,7 +93,7 @@ pipeline {
 
         // ETAPA 4: PROMOCIÓN A MASTER
         stage('Promoción a Master') {
-            // CAMBIO: Esta etapa también se ejecuta en 'deploy-test-agent'
+            // CAMBIO: Esta etapa también se ejecuta en 'deploy-test-agent'.
             agent { label 'deploy-test-agent' }
             steps {
                 checkout scm
