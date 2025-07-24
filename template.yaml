@@ -15,6 +15,10 @@ Parameters:
       - staging
       - production
     Description: Enter staging or production. Default is default  
+  DynamoDBTableName:
+    Type: String
+    Description: The name of the DynamoDB table for Todos.
+    Default: default-TodosDynamoDbTable
 
 # More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
 Globals:
@@ -96,7 +100,7 @@ Resources:
   TodosDynamoDbTable:
     Type: AWS::DynamoDB::Table
     Properties: 
-      TableName: !Sub "${Stage}-TodosDynamoDbTable"
+      TableName: !Ref DynamoDBTableName
       AttributeDefinitions: 
         - AttributeName: id
           AttributeType: S

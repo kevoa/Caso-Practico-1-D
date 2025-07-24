@@ -62,6 +62,8 @@ pipeline {
                         --capabilities CAPABILITY_IAM \\
                         --region ${AWS_REGION} \\
                         --no-fail-on-empty-changeset
+                        # AÑADO ESTA LINEA:
+                        --parameter-overrides DynamoDBTableName=staging-todos-table
                 """
             }
         }
