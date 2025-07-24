@@ -71,16 +71,22 @@ pipeline {
                 echo "Instalando dependencias para las pruebas..."
                 sh 'pip install -r test/integration/requirements.txt --break-system-packages'
         
-                echo "Obteniendo la URL del API Gateway..."
-                def apiUrl = sh(
-                    script: "aws cloudformation describe-stacks --stack-name ${STAGING_STACK_NAME} --query 'Stacks[0].Outputs[?OutputKey==`BaseUrlApi`].OutputValue' --output text --region ${AWS_REGION}",
-                    returnStdout: true
-                ).trim()
-                echo "Ejecutando pruebas de integración contra: ${apiUrl}"
-                sh """
-                    export PATH="/home/jenkins/.local/bin:\$PATH"
-                    API_URL=${apiUrl} pytest test/integration/todoApiTest.py
-                """
+                // Envolvemos la lógica en un bloque 'script'
+                script {
+                    echo "Obteniendo la URL del API Gateway..."
+                    def apiUrl = sh(
+                        // CORRECCIÓN 1: Cambiamos 'TodoApi' por 'BaseUrlApi'
+                        script: "aws cloudformation describe-stacks --stack-name ${STAGING_STACK_NAME} --query 'Stacks[0].Outputs[?OutputKey==`BaseUrlApi`].OutputValue' --output text --region ${AWS_REGION}",
+                        returnStdout: true
+                    ).trim()
+                    
+                    echo "Ejecutando pruebas de integración contra: ${apiUrl}"
+                    // CORRECCIÓN 2: Añadimos el PATH correcto antes de ejecutar pytest
+                    sh """
+                        export PATH="/home/jenkins/.local/bin:\$PATH"
+                        API_URL=${apiUrl} pytest test/integration/todoApiTest.py
+                    """
+                }
             }
         }
 
