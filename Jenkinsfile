@@ -108,7 +108,7 @@ pipeline {
                         
                         # Realiza el merge y el push
                         git checkout master
-                        git merge develop
+                        git merge origin/develop
                         git push origin master
                     """
                 }
